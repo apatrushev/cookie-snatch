@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  publish:
+    name: publish to crates.io
+    runs-on: ubuntu-latest
+    # Configure this environment in repo settings and attach the CARGO_REGISTRY_TOKEN secret to it
+    # for a required-reviewer gate on every publish.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          crate_version="$(cargo metadata --format-version=1 --no-deps \
+            | jq -r '.packages[0].version')"
+          if [ "$tag_version" != "$crate_version" ]; then
+            echo "::error::tag v$tag_version does not match Cargo.toml version $crate_version" >&2
+            exit 1
+          fi
+          echo "Publishing version $crate_version"
+
+      - name: Test
+        run: cargo test --locked --verbose
+
+      - name: Publish
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
